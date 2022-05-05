@@ -1,0 +1,557 @@
+---
+title: "Freedom Index Gap Data Project"
+---
+
+## Quarto
+
+Quarto enables you to weave together content and executable code into a finished document. To learn more about Quarto see <https://quarto.org>.
+
+## Variables
+
+| Variable       | Description                               |
+|----------------|-------------------------------------------|
+| country        | Name of Country                           |
+| year           | Year                                      |
+| CL             | Civil Liberties                           |
+| PR             | Political Rights                          |
+| Status         | Free, Not Free, Partially Free - 3 Levels |
+| Region_Code    | UN Region Code                            |
+| Region_Name    | UN Region Name                            |
+| is_ldc         | Developed country or not - 2 Levels       |
+| gdp            | gross domestic product                    |
+| dol_per_day    | gdp/population/365                        |
+| gdp_per_capita | gdp/population                            |
+|                |                                           |
+
+: Variables & Descriptions
+
+😍😍😍😍😍😍😍😍😍😍😍😍😍😍😍😍😍😍😍
+
+## Required Packages
+
+```{r}
+if(!require(tidytuesdayR)) install.packages("tidytuesdayR", repos = "http://cran.us.r-project.org")
+library(tidytuesdayR)
+if(!require(tidyverse)) install.packages("tidyverse", repos = "http://cran.us.r-project.org")
+library(tidyverse)
+if(!require(dslabs)) install.packages("dslabs", repos = "http://cran.us.r-project.org")
+library(dslabs)
+if(!require(caret)) install.packages("caret", repos = "http://cran.us.r-project.library(nnet)org")
+library(caret)
+if(!require(tidymodels)) install.packages("tidymodels", repos = "http://cran.us.r-project.org")
+library(tidymodels)
+if(!require(DT)) install.packages("DT", repos = "http://cran.us.r-project.org")
+library(DT)
+if(!require(ggtheme)) install.packages("ggtheme", repos = "http://cran.us.r-project.org")
+library(ggthemes)
+if(!require(nnet)) install.packages("nnet", repos = "http://cran.us.r-project.org")
+library(nnet)
+if(!require(psych)) install.packages("psych", repos = "http://cran.us.r-project.org")
+library(psych)
+if(!require(corrplot)) install.packages("corrplot", repos = "http://cran.us.r-project.org")
+library(corrplot)
+if(!require(scatterplot3d)) install.packages("scatterplot3d", repos = "http://cran.us.r-project.org")
+library(scatterplot3d)
+if(!require(mgcv)) install.packages("mgcv", repos = "http://cran.us.r-project.org")
+library(mgcv)
+if(!require(Metrics)) install.packages("Metrics", repos = "http://cran.us.r-project.org")
+library(Metrics)
+```
+
+😎😎😎😎😎😎😎😎😎😎😎😎😎😎😎😎😎😎😎
+
+## Data Source
+
+```{r}
+# World Freedom Index from tidytuesday
+tuesdata <- tidytuesdayR::tt_load('2022-02-22')
+free <- tuesdata$freedom
+# gapminder data set
+data("gapminder")
+```
+
+## Create New Data Set
+
+```{r}
+# merge free & gapminder by country and year
+free_gap <- merge(free, gapminder, by = c("country", "year"))
+# remove Region_Name, Region_Code
+free_gap <- free_gap %>%
+  select(-c(Region_Name, Region_Code)) %>%
+  # factorize Status, is_ldc
+  mutate(Status = as.factor(Status)) %>%
+  # mutate(is_ldc = as.factor(is_ldc)) %>%
+  mutate(country = as.factor(country)) %>%
+# create dollar per day and gdb per capita
+  filter(!is.na(gdp) & !is.na(population) & !is.na(fertility) & !is.na(infant_mortality)) %>% 
+  mutate(dol_per_day = gdp/population/365) %>% #dollar per day
+  mutate(gdp_per_cap = gdp/population) #gdp per capita
+View(free_gap)
+```
+
+## 
+
+## Data Exploration (Variable & Predictors)
+
+### individual variables
+
+```{r stats}
+# country
+free_gap %>%
+  group_by(country) %>%
+  summarize(n = n()) %>%
+  datatable()
+# year range
+range(free_gap$year)
+# CL
+free_gap %>%
+  group_by(CL) %>%
+  summarize(n = n()) %>%
+  ggplot(aes(x = CL, y = n)) +
+  geom_bar(stat = "identity") +
+  theme_stata() + # stata theme
+  scale_colour_stata()
+# PR
+free_gap %>%
+  group_by(PR) %>%
+  summarize(n = n()) %>%
+  ggplot(aes(x = PR, y = n)) +
+  geom_bar(stat = "identity")
+# Status
+free_gap %>%
+  group_by(Status) %>%
+  summarize(n = n()) %>%
+  ggplot(aes(x = Status, y = n)) +
+  geom_bar(stat = "identity")
+# is_ldc
+free_gap %>%
+  group_by(is_ldc) %>%
+  summarize(n = n()) %>%
+  ggplot(aes(x = is_ldc, y = n)) +
+  geom_bar(stat = "identity")
+# infant_mortality
+free_gap %>%
+  ggplot(aes(x = infant_mortality)) +
+  geom_histogram()
+# life_expectancy
+free_gap %>% 
+  ggplot(aes(x = life_expectancy)) +
+  geom_histogram() 
+# fertility
+free_gap %>%
+  ggplot(aes(x = fertility)) +
+  geom_histogram()
+# population
+free_gap %>%
+  ggplot(aes(x = log2(population))) +
+  geom_histogram()
+# gdp
+free_gap %>%
+  ggplot(aes(x = log10(gdp))) +
+  geom_histogram()
+```
+
+### Fertility, mortality, and life expectancy by continent
+
+```{r}
+# fertility & infant_mortality
+free_gap %>%
+    filter(year %in% c(1995, 2010)) %>%
+  ggplot(aes(fertility, infant_mortality, color = continent)) +
+  geom_point() +
+  theme_stata(scheme = "s1color") +
+  scale_color_stata("s1color") +
+  facet_grid(.~year) 
+```
+
+```{r}
+# life_expectancy $ infant_mortality
+free_gap %>%
+    filter(year %in% c(1995, 2010)) %>%
+    ggplot(aes(life_expectancy, infant_mortality, color = continent)) + 
+    geom_point() +
+    facet_grid(.~year) +
+    theme_stata(scheme = "s1color") +
+    scale_color_stata("s1color") 
+
+```
+
+```{r}
+# life_expectancy & fertlity
+free_gap %>% 
+    filter(year %in% c(1995, 2010)) %>% 
+    ggplot(aes(life_expectancy, fertility, color = continent)) + 
+    geom_point() + 
+    facet_grid(.~year) +
+    theme_stata(scheme = "s1color") +
+    scale_color_stata("s1color") 
+```
+
+## Population against 3 Life Variables
+
+```{r}
+# log10(population) & infant_mortality - comparison of 1995 & 2010
+free_gap %>%
+    filter(year %in% c(1995, 2010)) %>%
+    ggplot(aes(log10(population), infant_mortality, color = continent)) +
+    geom_point() +
+    facet_grid(.~year) +
+    xlab("Population (log10)") +
+    theme_stata(scheme = "s1color") +
+    scale_color_stata("s1color") 
+```
+
+```{r}
+# log10(population) & life_expectancy
+free_gap %>%
+    filter(year %in% c(1995, 2010)) %>%
+    ggplot(aes(log10(population), life_expectancy, color = continent)) +
+    geom_point() +
+    facet_grid(.~year) +
+    theme_stata(scheme = "s1color") +
+    scale_color_stata("s1color") 
+```
+
+```{r}
+# log10(population) & fertility
+free_gap %>%
+    filter(year %in% c(1995, 2010)) %>%
+    ggplot(aes(log10(population), fertility, color = continent)) +
+    geom_point() +
+    facet_grid(.~year) +
+    theme_stata(scheme = "s1color") +
+    scale_color_stata("s1color") 
+```
+
+### GDP per capita & Other Predictors
+
+```{r}
+# log10(gdp_per_cap) distribution by region 
+free_gap %>%
+    filter(year %in% c(1995, 2011)) %>% 
+    mutate(region = reorder(region, gdp_per_cap, median)) %>%
+    ggplot(aes(x = log10(gdp_per_cap), y = region)) +
+    facet_grid(year ~.) +
+    geom_point() +
+    ylab("Population (Log Transformed)")
+```
+
+```{r}
+# gdp_per_cap & life_expectancy
+free_gap %>%
+  filter(year %in% c(1995, 2010)) %>%
+  ggplot(aes(log10(gdp_per_cap), life_expectancy, color = continent)) +
+  geom_point() +
+  facet_grid(. ~ year) +
+  xlab("GDP per capita (log transformed)") +
+  ylab("Life Expectancy") +
+  theme_stata(scheme = "s1color") +
+  scale_color_stata("s1color") 
+```
+
+```{r}
+# gdp_per_cap & fertility
+free_gap %>%
+  filter(year %in% c(1995, 2010)) %>%
+  ggplot(aes(log10(gdp_per_cap), fertility, color = continent)) +
+  geom_point() +
+  facet_grid(. ~ year) +
+  theme_stata(scheme = "s1color") +
+  scale_color_stata("s1color") 
+```
+
+```{r}
+# gdp_per_cap & mortality
+free_gap %>%
+  filter(year %in% c(1995, 2010)) %>%
+  ggplot(aes(log10(gdp_per_cap), infant_mortality, color = continent)) +
+  geom_point() +
+  facet_grid(. ~ year) +
+  theme_stata(scheme = "s1color") +
+  scale_color_stata("s1color")
+```
+
+```{r}
+# population & gdp - log10 transformed
+free_gap %>%
+  filter(year %in% c(1995, 2010)) %>%
+  ggplot(aes(x = log10(population), y = log10(gdp), color = continent)) +
+  geom_point() +
+  facet_grid(. ~ year) +
+  theme_stata(scheme = "s1color") +
+  scale_color_stata("s1color")
+```
+
+## GDP per cap & Freedom Index
+
+```{r}
+# gdp_per_cap distribution
+free_gap %>%
+  filter(year == 2010) %>%
+  ggplot(aes(log2(gdp_per_cap))) +
+  geom_histogram(binwidth = 1, color = "black")
+```
+
+```{r}
+# CL & PR combo count
+free_gap %>%
+  count(CL, PR, sort = TRUE) %>%
+  datatable()
+```
+
+```{r}
+# adding Status & is_ldc
+free_gap %>%
+  count(CL, PR, Status, is_ldc) %>%
+  arrange(desc(n)) %>%
+  datatable()
+```
+
+### Create Freedom Index Matrix
+
+```{r}
+# Creat Freedom Index metrix
+fi_gap <- free_gap %>% 
+  select(CL, PR, is_ldc) # extract 3 variables
+# View(fi_gap)
+```
+
+```{r}
+# Create 3D Scatterplot with CL, PR, and is_ldc
+with(free_gap, scatterplot3d(CL, PR, is_ldc, pch = 19, box = FALSE, highlight.3d = TRUE))
+```
+
+## Principal Component Analysis
+
+### Sub-setting free_gap data for PCA
+
+```{r}
+# omit non-numeric variables + dol_per_day
+free_matrix <- free_gap %>%
+  select(-c(country, year, Status, continent, region, dol_per_day))
+# View(free_matrix)
+```
+
+Correlation Matrix
+
+<!--# fix x lab -->
+
+```{r}
+# correlation matrix
+free_val <- cor(free_matrix)
+corrplot(free_val, 
+         type = "upper", 
+         order = "hclust", 
+         tl.col = "black",
+         tl.srt = 4)
+```
+
+```{r}
+pca_model <- prcomp(free_matrix,
+                    scale = TRUE,
+                    center = TRUE)
+summary_pca <- summary(pca_model)
+summary_pca
+View(summary_pca$x)
+```
+
+### Plotting PCA
+
+```{r}
+# Scree Plot for PCA
+plot(pca_model, type = "l", main = "Scree Plot for PCA")
+```
+
+```{r}
+plot(summary_pca$importance[3,], type = "l")
+```
+
+```{r}
+# Plotting PC1 & PC2
+pca_df <- data.frame(free_gap, pca_model$x)
+ggplot(pca_df, aes(x = PC1, y = PC2, color = Status)) + geom_point(size = 0.5) + ggtitle("Plotting Status Data against PC1 and PC2")
+```
+
+## Classification Machine Learning
+
+### Splitting free_gap data into testing and training set
+
+data partition 40-60
+
+```{r}
+# data partition 40-60
+set.seed(2022, sample.kind = "Rounding")
+test_index <- createDataPartition(free_gap$Status,times = 1, p = 0.4, list = FALSE) # nolint
+training <- free_gap[-test_index,]
+testing <- free_gap[test_index,]
+# remove duplicates
+testing <- testing %>% semi_join(training, by = "Status")
+```
+
+```{r}
+# Omit variables that are not needed + STATUS
+training_2 <- training %>%
+  select(-c(country, year, Status, continent, region, dol_per_day))
+testing_2 <- testing %>%
+  select(-c(country, year, Status, continent, region, dol_per_day))
+```
+
+Scatter plot of matrices (SPLOM) with bivariate scatter plots below the diagonal, histograms on the diagonal, and the Pearson correlation above the diagonal
+
+<!--# need to fix -->
+
+```{r}
+# psych library pairs.panels()
+pairs.panels(training_2,
+  gap = 0,
+  bg = c("red", "blue", "yellow")[training$Status],
+  stars = TRUE,
+  pch = 21)
+```
+
+```{r}
+# training PCA with 9 variables
+pr <- prcomp(training_2,
+  center = TRUE,
+  scale. = TRUE)
+attributes(pr)
+pr_summary <- summary(pr)
+pr_summary$importance
+x <- pr$x
+
+# testing PCA
+pr_t <- prcomp(testing_2,
+  center = TRUE,
+  scale. = TRUE)
+```
+
+## Freedom Index Gap - PCA
+
+```{r}
+# freedom index gap PCA
+pr_2 <- prcomp(fi_gap,
+  center = TRUE,
+  scale. = TRUE)
+pr_2_summary <- summary(pr_2)
+pr_2_summary$importance
+x_2 <- pr_2$x
+```
+
+SPLOM graph on freedom gap index data (3 variables)
+
+```{r}
+# freedom gap 3 variables
+pairs.panels(fi_gap,
+  gap = 0,
+  bg = c("red", "blue", "yellow")[training$Status],
+  pch = 21)
+```
+
+```{r}
+# x after PCA rolation 
+# check multicollinearity
+pairs.panels(pr_2$x,
+  gap = 0,
+  bg = c("red", "blue", "yellow")[training$Status],
+  pch = 21)
+```
+
+#### Multinomial Prediction with PCA (Status - 3 levels)
+
+```{r}
+# training prediction
+trg_pred <- predict(pr, training)
+# add Status
+trg_pred <- data.frame(trg_pred, training$Status)
+# testing prediction
+tst_pred <- predict(pr_t, testing)
+tst_pred <- data.frame(tst_pred, testing$Status)
+
+```
+
+```{r}
+trg_pred$training.Status <- relevel(trg_pred$training.Status, ref="NF")
+trg_model <- multinom(training.Status ~ ., data = trg_pred)
+summary(trg_model)
+
+# trg_model <- gam(training.Status ~ .,
+#                  family = gaussian,
+#                  data = trg_pred)
+```
+
+### Evaluation Metrics: Confusion Matrix and Classification Errors
+
+```{r}
+p_hat <- predict(trg_model, trg_pred)
+p_tab <- table(p_hat, trg_pred$training.Status)
+p_tab
+```
+
+### Multinomial Prediction (No PCA Status - 3 levels)
+
+```{r}
+# modify the free_gap data structure
+free_gap_m <- free_gap %>% 
+    select(-c(dol_per_day, region, continent, gdp, population, year, country)) # 8 columns left
+```
+
+```{r}
+# split into training and testing
+# data partition 40-60
+set.seed(2022, sample.kind = "Rounding")
+test_index <- createDataPartition(free_gap_m$Status,times = 1, p = 0.4, list = FALSE) # nolint
+training <- free_gap_m[-test_index,]
+testing <- free_gap_m[test_index,]
+# remove duplicates
+testing <- testing %>% semi_join(training, by = "Status")
+```
+
+<!--# multinom or gam fix -->
+
+```{r}
+multinom_mod <- multinom(Status ~ ., data = training)
+```
+
+## dol_per_day Prediction with Freedom Gap Index
+
+```{r}
+# create gdp_per_cap pred data frame
+dpd_df <- free_gap %>%
+  select(-c(country, year, continent, region, gdp_per_cap))
+summary(dpd_df)
+```
+
+```{r}
+# split trg and tst data frame
+set.seed(2022, sample.kind = "Rounding")
+test_index <- createDataPartition(dpd_df$dol_per_day, 
+                                  times = 1, 
+                                  p = 0.2, 
+                                  list = FALSE)
+trg <- dpd_df[-test_index,]
+tst <- dpd_df[test_index,]
+```
+
+### Evaluation Matrix: RMSE, MAE (NMAE), and MSE
+
+```{r}
+RMSE <- function(true_ratings, predicted_ratings){
+  sqrt(mean((true_ratings - predicted_ratings)^2))
+}
+MSE <- function(true_ratings, predicted_ratings){
+  mean(true_ratings - predicted_ratings)^2
+}
+NMAE <- function(true_ratings, predicted_ratings){
+  mae(true_rating, predicted_ratings)/mean(true_ratings)
+}
+```
+
+Naive Baseline
+
+/
+
+Linear Baseline
+
+Generalized Additive Model (GAM)
+
+Support Vector Machines (SVM)
