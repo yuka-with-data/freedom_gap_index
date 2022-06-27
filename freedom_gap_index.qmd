@@ -56,6 +56,7 @@ if(!require(mgcv)) install.packages("mgcv", repos = "http://cran.us.r-project.or
 library(mgcv)
 if(!require(Metrics)) install.packages("Metrics", repos = "http://cran.us.r-project.org")
 library(Metrics)
+library(e1071)
 ```
 
 😎😎😎😎😎😎😎😎😎😎😎😎😎😎😎😎😎😎😎
@@ -77,7 +78,7 @@ data("gapminder")
 free_gap <- merge(free, gapminder, by = c("country", "year"))
 # remove Region_Name, Region_Code
 free_gap <- free_gap %>%
-  select(-c(Region_Name, Region_Code)) %>%
+  dplyr::select(-c(Region_Name, Region_Code)) %>% # specify dplyr to run select
   # factorize Status, is_ldc
   mutate(Status = as.factor(Status)) %>%
   # mutate(is_ldc = as.factor(is_ldc)) %>%
@@ -187,7 +188,7 @@ free_gap %>%
     scale_color_stata("s1color") 
 ```
 
-## Population against 3 Life Variables
+## Population & 3 Life Variables
 
 ```{r}
 # log10(population) & infant_mortality - comparison of 1995 & 2010
@@ -233,11 +234,12 @@ free_gap %>%
     ggplot(aes(x = log10(gdp_per_cap), y = region)) +
     facet_grid(year ~.) +
     geom_point() +
-    ylab("Population (Log Transformed)")
+    ylab("Population (Log Transformed)") +
+    xlab("GDP per capita (Log Transformed)")
 ```
 
 ```{r}
-# gdp_per_cap & life_expectancy
+# gdp_per_cap & life_expectancy in comparison of 1995 and 2010
 free_gap %>%
   filter(year %in% c(1995, 2010)) %>%
   ggplot(aes(log10(gdp_per_cap), life_expectancy, color = continent)) +
@@ -256,6 +258,7 @@ free_gap %>%
   ggplot(aes(log10(gdp_per_cap), fertility, color = continent)) +
   geom_point() +
   facet_grid(. ~ year) +
+  xlab("GDP per capita (log transformed)") +
   theme_stata(scheme = "s1color") +
   scale_color_stata("s1color") 
 ```
@@ -267,6 +270,7 @@ free_gap %>%
   ggplot(aes(log10(gdp_per_cap), infant_mortality, color = continent)) +
   geom_point() +
   facet_grid(. ~ year) +
+  xlab("GDP per capita (log transformed)") +
   theme_stata(scheme = "s1color") +
   scale_color_stata("s1color")
 ```
@@ -278,6 +282,8 @@ free_gap %>%
   ggplot(aes(x = log10(population), y = log10(gdp), color = continent)) +
   geom_point() +
   facet_grid(. ~ year) +
+  xlab("Population (log transformed)") +
+  ylab("GDP (log transformed)") +
   theme_stata(scheme = "s1color") +
   scale_color_stata("s1color")
 ```
@@ -312,7 +318,7 @@ free_gap %>%
 ```{r}
 # Creat Freedom Index metrix
 fi_gap <- free_gap %>% 
-  select(CL, PR, is_ldc) # extract 3 variables
+  dplyr::select(CL, PR, is_ldc) # extract 3 variables
 # View(fi_gap)
 ```
 
@@ -328,8 +334,8 @@ with(free_gap, scatterplot3d(CL, PR, is_ldc, pch = 19, box = FALSE, highlight.3d
 ```{r}
 # omit non-numeric variables + dol_per_day
 free_matrix <- free_gap %>%
-  select(-c(country, year, Status, continent, region, dol_per_day))
-# View(free_matrix)
+  dplyr::select(-c(country, year, Status, continent, region, dol_per_day))
+View(free_matrix)
 ```
 
 Correlation Matrix
@@ -391,9 +397,9 @@ testing <- testing %>% semi_join(training, by = "Status")
 ```{r}
 # Omit variables that are not needed + STATUS
 training_2 <- training %>%
-  select(-c(country, year, Status, continent, region, dol_per_day))
+  dplyr::select(-c(country, year, Status, continent, region, dol_per_day))
 testing_2 <- testing %>%
-  select(-c(country, year, Status, continent, region, dol_per_day))
+  dplyr::select(-c(country, year, Status, continent, region, dol_per_day))
 ```
 
 Scatter plot of matrices (SPLOM) with bivariate scatter plots below the diagonal, histograms on the diagonal, and the Pearson correlation above the diagonal
@@ -471,12 +477,13 @@ tst_pred <- data.frame(tst_pred, testing$Status)
 
 ```{r}
 trg_pred$training.Status <- relevel(trg_pred$training.Status, ref="NF")
-trg_model <- multinom(training.Status ~ ., data = trg_pred)
+trg_model <- nnet::multinom(training.Status ~ ., data = trg_pred)
 summary(trg_model)
-
-# trg_model <- gam(training.Status ~ .,
-#                  family = gaussian,
-#                  data = trg_pred)
+# OR
+# trg_model <- train(training.Status ~ .,
+#                    method = "gamLoess",
+#                    data = trg_pred)
+                   
 ```
 
 ### Evaluation Metrics: Confusion Matrix and Classification Errors
@@ -485,6 +492,10 @@ summary(trg_model)
 p_hat <- predict(trg_model, trg_pred)
 p_tab <- table(p_hat, trg_pred$training.Status)
 p_tab
+```
+
+```{r}
+
 ```
 
 ### Multinomial Prediction (No PCA Status - 3 levels)
@@ -506,10 +517,33 @@ testing <- free_gap_m[test_index,]
 testing <- testing %>% semi_join(training, by = "Status")
 ```
 
-<!--# multinom or gam fix -->
+```{r}
+# Setting the reference level - F
+training$Status <- relevel(training$Status, ref = "F")
+multinom_mod <- nnet::multinom(Status ~ ., data = training)
+```
 
 ```{r}
-multinom_mod <- multinom(Status ~ ., data = training)
+# Setting the reference level - F
+training$Status <- relevel(training$Status, ref = "F")
+training_mod <- nnet::multinom(Status ~ ., data = training)
+summary(training_mod)
+
+```
+
+```{r}
+class_svm <- svm(Status ~ .,
+                 data = training, 
+                 kernel = 'linear',
+                 cost = 10,
+                 scale = FALSE)
+print(class_svm)
+```
+
+```{r}
+# confusion matrix
+svm_hat <- predict(class_svm, training, type = "response")
+confusionMatrix(svm_hat, training$Status)
 ```
 
 ## dol_per_day Prediction with Freedom Gap Index
@@ -517,7 +551,7 @@ multinom_mod <- multinom(Status ~ ., data = training)
 ```{r}
 # create gdp_per_cap pred data frame
 dpd_df <- free_gap %>%
-  select(-c(country, year, continent, region, gdp_per_cap))
+  dplyr::select(-c(country, year, continent, region, gdp_per_cap))
 summary(dpd_df)
 ```
 
